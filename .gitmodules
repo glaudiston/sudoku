@@ -1,0 +1,9 @@
+[submodule "termsdk"]
+	path = termsdk
+	url = git@github.com:glaudiston/termsdk.git
+[submodule "logger"]
+	path = logger
+	url = git@github.com:glaudiston/logger
+[submodule "pragma_once"]
+	path = pragma_once
+	url = git@github.com:glaudiston/pragma_once.git
