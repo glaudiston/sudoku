@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 #
 # This is a Sudoku game implementation. see README.md for user friendly info;
+# Author: Glaudiston Gomes
+# License: MIT
 #
+# Dependencies:
+# - flock (util-linux)
+
+UNAME=$(uname);
+[[ "$UNAME" == "Darwin" ]] && {
+	which flock 2>/dev/null || brew install flock
+}
+
+[[ -d /dev/shm ]] && SHM_DIR=/dev/shm || SHM_DIR=/tmp
+declare base_folder;
+base_folder="$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")";
 
 # force submodule update if needed to help new users
-ls logger/bash/logger.sh >/dev/null || git submodule update --init --recursive
+ls "${base_folder}/logger/bash/logger.sh" >/dev/null || git -C "${base_folder}" submodule update --init --recursive
 
 cleanup(){
 	echo -en "${TERM_LINE_WRAP_ON}${TERM_ALT_BUFFER_OFF}${TERM_CURSOR_ON}";
@@ -15,10 +28,10 @@ cleanup(){
 
 set -euo pipefail;
 export LOG_MIME="file/jsonl";
-export LOG_FILE=./logfile.jsonl;
+export LOG_FILE="${base_folder}/logfile.jsonl";
 
-. ./logger/bash/logger.sh
-. ./termsdk/ansi_term_codes.sh
+. "$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")/logger/bash/logger.sh";
+. "$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")/termsdk/ansi_term_codes.sh"
 
 term_title "SUDOKU"
 echo -en "${TERM_ALT_BUFFER_ON}${TERM_LINE_WRAP_OFF}${TERM_CURSOR_OFF}";
@@ -209,7 +222,7 @@ cell_draw(){
 	(flock -x 3;
 		move_to_cell "$x" "$y";
 		echo -ne "$bg$fg$v$TERM_COLOR_RESET";
-	) 3>/dev/shm/sudoku.drawlock;
+	) 3>"$SHM_DIR/sudoku.drawlock";
 }
 
 move_to_cell(){
@@ -243,7 +256,7 @@ cell_highlight(){
 	local bg
 	bg=$(term_color rgb background 100 80 50);
 	echo -ne "$bg $3 $TERM_COLOR_RESET";
-	) 4>/dev/shm/sudoku.draw-highlight-lock
+	) 4>"$SHM_DIR/sudoku.draw-highlight-lock"
 }
 highlight_bloc(){
 	local blocN="$1"
@@ -274,13 +287,19 @@ highlight_value(){
 	wait;
 }
 
-declare save_file=sudoku.save
+
+declare save_folder=${base_folder}/save;
+declare default_save_file=${save_folder}/sudoku.save;
+declare current_save_file=$default_save_file;
 load(){
-	[[ -f sudoku.save ]] && mapfile -t values <${save_file}
+	local save_file=$1;
+	mkdir -p "${save_folder}";
+	[[ -f "${save_file}" ]] && mapfile -t values <"${save_file}"
 	redraw
 }
 save(){
-	printf "%s\n" "${values[@]}" >"${save_file}"
+	mkdir -p save;
+	printf "%s\n" "${values[@]}" >"${default_save_file}"
 }
 quit(){
 	exit 0;
@@ -345,5 +364,6 @@ read_input(){
 		done;
 	done
 }
-load
+load "${default_save_file}"
 read_input
+wait;
