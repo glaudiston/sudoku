@@ -14,10 +14,10 @@ UNAME=$(uname);
 
 [[ -d /dev/shm ]] && SHM_DIR=/dev/shm || SHM_DIR=/tmp
 declare base_folder;
-relative_realpath(){
+sudoku_relative_realpath(){
 	realpath --relative-to . $1 2>/dev/null || realpath $1
 }
-base_folder="$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")";
+base_folder="$(dirname "$(sudoku_relative_realpath "${BASH_SOURCE[0]}")")";
 
 # force submodule update if needed to help new users
 ls "${base_folder}/logger/bash/logger.sh" >/dev/null || git -C "${base_folder}" submodule update --init --recursive
@@ -33,8 +33,8 @@ set -euo pipefail;
 export LOG_MIME="file/jsonl";
 export LOG_FILE="${base_folder}/logfile.jsonl";
 
-. "$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")/logger/bash/logger.sh";
-. "$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")/termsdk/ansi_term_codes.sh"
+. "$(dirname "$(sudoku_relative_realpath "${BASH_SOURCE[0]}")")/logger/bash/logger.sh";
+. "$(dirname "$(sudoku_relative_realpath "${BASH_SOURCE[0]}")")/termsdk/ansi_term_codes.sh"
 
 term_title "SUDOKU"
 echo -en "${TERM_ALT_BUFFER_ON}${TERM_LINE_WRAP_OFF}${TERM_CURSOR_OFF}";
