@@ -9,7 +9,7 @@
 
 UNAME=$(uname);
 [[ "$UNAME" == "Darwin" ]] && {
-	which flock 2>/dev/null || brew install flock
+	which flock &>/dev/null || brew install flock
 }
 
 [[ -d /dev/shm ]] && SHM_DIR=/dev/shm || SHM_DIR=/tmp
@@ -33,8 +33,8 @@ set -euo pipefail;
 export LOG_MIME="file/jsonl";
 export LOG_FILE="${base_folder}/logfile.jsonl";
 
-. "$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")/logger/bash/logger.sh";
-. "$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")/termsdk/ansi_term_codes.sh"
+. "$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")/logger/bash/logger.sh";
+. "$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")/termsdk/ansi_term_codes.sh"
 
 term_title "SUDOKU"
 echo -en "${TERM_ALT_BUFFER_ON}${TERM_LINE_WRAP_OFF}${TERM_CURSOR_OFF}";
