@@ -221,6 +221,7 @@ cell_draw(){
 				fg=$(term_color rgb foreground 130 0 0);
 			fi;
 		fi;
+		[[ "$v" == " 0 " ]] && v="   "
 	fi;
 	(flock -x 3;
 		move_to_cell "$x" "$y";
@@ -228,16 +229,21 @@ cell_draw(){
 	) 3>"$SHM_DIR/sudoku.drawlock";
 }
 
+declare table_x_pad=1
+declare table_y_pad=1
+
 move_to_cell(){
 	local cell_width=3;
 	local cell_height=1;
 	local x="$1";
 	local y="$2";
-	term_move "$(((2+x)*cell_width -2))" "$(((2+y)*cell_height))";
+	term_move "$(( table_x_pad + (2+x)*cell_width -2 ))" "$(( table_y_pad + (2+y)*cell_height ))";
 }
 
 redraw(){
 	clear;
+	render_frame;
+	ui_status "Rendering.... Please wait...(bash is slow)"
 	local y;
 	local x;
 	local v;
@@ -249,6 +255,7 @@ redraw(){
 		done;
 	done;
 	wait
+	ui_help;
 	term_move 0 0
 }
 
@@ -265,13 +272,21 @@ highlight_bloc(){
 	local blocN="$1"
 }
 highlight_col(){
-	:
+	local x=$1;
+	local y=0;
+	for (( y=0; y<9; y++ )) 
+	do
+		:
+	done;
 }
 highlight_row(){
 	local x="$1"
 }
 highlight_value(){
 	local v="$1";
+	if [[ "$v" == "0" ]]; then
+		return;
+	fi;
 	local x;
 	local y;
 	for (( i=0; i<9*9; i++ )){
@@ -292,40 +307,181 @@ highlight_value(){
 
 
 declare save_folder=${base_folder}/save;
-declare default_save_file=${save_folder}/sudoku.save;
-declare current_save_file=$default_save_file;
-load(){
-	local save_file=$1;
+declare save_id_file=${save_folder}/save_id;
+
+get_game_id(){
+	local gameid;
 	mkdir -p "${save_folder}";
+	[ -f "$save_id_file" ] || echo "0" > "$save_id_file";
+	info "get_game_id before read"
+	read -r gameid <"$save_id_file"
+	info "get_game_id after read: ${gameid:-0}"
+	echo -n "${gameid:-0}"
+}
+
+get_save_file(){
+	local save_file;
+	local gameid;
+	gameid="$(get_game_id)";
+	save_file="${save_folder}/sudoku.${gameid}.save"
+	echo -n "$save_file"
+}
+
+new(){
+	local max_game_id;
+	max_game_id=$(ls -t1 $save_folder | grep -o '[0-9]*.save' | grep -o '[0-9]*' | sort -n | tail -1)
+	echo -n "$((max_game_id+1))" >"$save_id_file";
+}
+
+
+load(){
+	local files_per_page=9
+	local page=0;
+	declare -a save_files;
+	mapfile -t save_files < <(ls -t1 "$save_folder/sudoku."*".save");
+	info "found ${#save_files[@]}"
+	last_page=$(( ${#save_files[@]} / files_per_page ));
+	while true; do
+	{
+		[[ $page -lt 0 ]] && page=0;
+		[[ $page -gt $last_page ]] && page=$last_page;
+		ui_status "Listing saves..."
+		local i;
+		local f="";
+		for (( i=0; i<9; i++ )); do
+			term_move 2 $((2+i))
+			f="(empty)";
+			if [[ $(( i*page+i )) -lt ${#save_files[@]} ]]; then
+				f="${save_files[$((i*page+i))]}";
+			fi;
+			printf " %i %-27s" "$((i+1))" "$f"; 
+		done
+		term_move 11 11
+		printf "[page %i/%i]" $((page+1)) $((last_page+1))
+		ui_status "Select your save file"
+		term_move 1 15
+		printf "n\tNext page"
+		printf "p\tPrevious Page"
+		printf "c\tCancel\n"
+		printf "q\tQuit"
+		local opt;
+		read -srn 1 opt;
+		if [[ "$opt" =~ ^(n| )$ ]]; then
+			page=$((page+1))
+			continue;
+		fi;
+		if [[ "$opt" =~ ^[bp]$ ]]; then
+			page=$((page-1));
+			continue;
+		fi;
+		if [[ "$opt" == "c" ]]; then
+			redraw;
+			return;
+		fi;
+		if [[ "$opt" == "q" ]]; then
+			quit;
+		fi;
+		if [[ "$opt" =~ ^[1-9]$ ]]; then
+			clear
+			i=$(( opt*(page)+opt-1 ))
+			if [[ ! $i -lt ${#save_files[@]} ]]; then
+				new
+				break;
+			fi;
+			f=${save_files[i]};
+			echo "$f"| grep -o "[0-9]*" > "${save_id_file}"
+			break;
+		fi;
+	};
+	done;
+	local save_file;
+	ui_status "Loading..."
+	save_file="$(get_save_file)";
+	set_blank_values
 	[[ -f "${save_file}" ]] && mapfile -t values <"${save_file}"
 	redraw
 }
+
 save(){
-	mkdir -p save;
-	printf "%s\n" "${values[@]}" >"${default_save_file}"
+	local save_file;
+	save_file=$(get_save_file);
+	printf "%s\n" "${values[@]}" >"${save_file}"
+	ui_status "Saved"
+	sleep 1;
 }
+
+declare last_status_size=0
+render_frame(){
+	term_move 0 0
+	bg=$(term_color rgb background 20 20 20);
+	fg=$(term_color rgb foreground 40 40 70);
+	printf "$bg$fg%s%30s%s\n" "╭" "" "╮"| sed "s/ /─/g"
+	local i;
+	for (( i=0; i<10; i++)); do
+	printf "%s%30s%s\n" "│" "" "│"
+	done;
+	printf "%s%30s%s" "╰" "" "╯"| sed "s/ /─/g"
+	#printf "%s" "ꜜ6️⃣9️⃣9️⃣";
+}
+ui_status() {
+	term_move 2 13
+	local text="$*"
+	printf "%-${last_status_size:0}s" "$*"
+	last_status_size=${#text}
+	term_move 2 0
+}
+ui_help(){
+	term_move 0 15
+	for v in "${!keybind[@]}";
+	do
+		echo -e "$v\t${keybind[$v]}"
+	done;
+	term_move 0 0
+}
+
 quit(){
+	reset;
 	exit 0;
 }
 
 set_x(){
 	# parse colum (x)
-	if [[ "$REPLY" =~ ^[A-I]$ ]]; then # col (x)
-		ix="$REPLY";
-		xdx=$(xd "$ix");
-		x="$(( 16#$xdx - 16#$xd_A))"
-		highlight_col "$x";
+	if [[ ! "$REPLY" =~ ^[A-I]$ ]]; then
+		# invalid
+		return;
 	fi;
+	# col (x)
+	ix="$REPLY";
+	xdx=$(xd "$ix");
+	old_x="$x"
+	x="$(( 16#$xdx - 16#$xd_A))"
+	if [[ "$old_x" == "$x" ]]; then
+		return;
+	fi;
+	highlight_col "$x";
+	local blocN="$(( (x%3+1) * (y/3+1) -1 ))";
+	highlight_bloc "$blocN";
 }
+
 set_y(){
 	# parse row (y)
-	if [[ "$REPLY" =~ ^[a-i]$ ]]; then # row (y)
-		iy="$REPLY";
-		xdy=$(xd "$iy");
-		y="$(( 16#$xdy - 16#$xd_a))";
-		highlight_row "$y";
+	if [[ ! "$REPLY" =~ ^[a-i]$ ]]; then
+		# invalid
+		return;
 	fi;
+	# row (y)
+	iy="$REPLY";
+	xdy=$(xd "$iy");
+	old_y="$y"
+	y="$(( 16#$xdy - 16#$xd_a))";
+	if [[ "$old_y" == "$y" ]]; then
+		return;
+	fi;
+	highlight_row "$y";
+	local blocN="$(( (x%3+1) * (y/3+1) -1 ))";
+	highlight_bloc "$blocN";
 }
+
 set_v(){
 	# parse / set value
 	if [[ "$REPLY" =~ ^[0-9]$ && ! -z "$ix" && ! -z "$iy" ]]; then
@@ -336,8 +492,6 @@ set_v(){
 		ix="";
 		iy="";
 		save;
-		local blocN="$(( (x%3+1) * (y/3+1) -1 ))";
-		highlight_bloc "$blocN";
 		x=-1;
 		y=-1;
 	fi;
@@ -347,6 +501,9 @@ set_v(){
 declare -A keybind;
 keybind["s"]=save
 keybind["l"]=load
+keybind["n"]=new;
+#keybind["j"]=hint_one;
+#keybind["k"]=auto_solve;
 keybind["[A-I]"]=set_x
 keybind["[a-i]"]=set_y
 keybind["[0-9]"]=set_v
@@ -361,12 +518,16 @@ read_input(){
 	local y=-1;
 	local v;
 	local i;
+	ui_status "Ready! Waiting your call..."
 	while read -srn 1; do
+		ui_status "Processing your input... Please wait..."
 		for k in "${!keybind[@]}"; do
 			[[ "$REPLY" =~ $k ]] && ${keybind[$k]} "$REPLY";
 		done;
+		ui_status "Ready! Waiting your call..."
 	done
 }
-load "${default_save_file}"
+render_frame;
+load
 read_input
 wait;
