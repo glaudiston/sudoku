@@ -14,7 +14,10 @@ UNAME=$(uname);
 
 [[ -d /dev/shm ]] && SHM_DIR=/dev/shm || SHM_DIR=/tmp
 declare base_folder;
-base_folder="$(dirname "$(realpath --relative-to . "${BASH_SOURCE[0]}")")";
+relative_realpath(){
+	realpath --relative-to . $1 2>/dev/null || realpath $1
+}
+base_folder="$(dirname "$(realative_realpath "${BASH_SOURCE[0]}")")";
 
 # force submodule update if needed to help new users
 ls "${base_folder}/logger/bash/logger.sh" >/dev/null || git -C "${base_folder}" submodule update --init --recursive
