@@ -17,7 +17,7 @@ declare base_folder;
 relative_realpath(){
 	realpath --relative-to . $1 2>/dev/null || realpath $1
 }
-base_folder="$(dirname "$(realative_realpath "${BASH_SOURCE[0]}")")";
+base_folder="$(dirname "$(relative_realpath "${BASH_SOURCE[0]}")")";
 
 # force submodule update if needed to help new users
 ls "${base_folder}/logger/bash/logger.sh" >/dev/null || git -C "${base_folder}" submodule update --init --recursive
