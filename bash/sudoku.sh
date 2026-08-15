@@ -331,10 +331,11 @@ new(){
 	local max_game_id;
 	max_game_id=$(ls -t1 $save_folder | grep -o '[0-9]*.save' | grep -o '[0-9]*' | sort -n | tail -1)
 	echo -n "$((max_game_id+1))" >"$save_id_file";
+	load
 }
 
 
-load(){
+load_select(){
 	local files_per_page=9
 	local page=0;
 	declare -a save_files;
@@ -394,6 +395,9 @@ load(){
 		fi;
 	};
 	done;
+	load;
+}
+load(){
 	local save_file;
 	ui_status "Loading..."
 	save_file="$(get_save_file)";
@@ -500,7 +504,7 @@ set_v(){
 
 declare -A keybind;
 keybind["s"]=save
-keybind["l"]=load
+keybind["l"]=load_select
 keybind["n"]=new;
 #keybind["j"]=hint_one;
 #keybind["k"]=auto_solve;
