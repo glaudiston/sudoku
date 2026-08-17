@@ -15,7 +15,7 @@ UNAME=$(uname);
 [[ -d /dev/shm ]] && SHM_DIR=/dev/shm || SHM_DIR=/tmp
 declare base_folder;
 sudoku_relative_realpath(){
-	realpath --relative-to . $1 2>/dev/null || realpath $1
+	realpath --relative-to . "$1" 2>/dev/null || realpath "$1"
 }
 base_folder="$(dirname "$(sudoku_relative_realpath "${BASH_SOURCE[0]}")")";
 
@@ -51,44 +51,71 @@ declare xd_a;
 xd_a=$(xd "a");
 declare xd_A
 xd_A=$(xd "A");
+declare BLANK_COUNT_IDX=81;
+declare ERROR_COUNT_IDX=82;
+declare SPENT_TIME_IDX=83;
+declare START_TIME_IDX=84; # game creating
+declare LAST_SAVE_TIME_IDX=85;
+declare LAST_OPEN_TIME_IDX=86; # used to calc the spent time
+declare LAST_FIELD_IDX=$LAST_OPEN_TIME_IDX;
+set_fields(){
+	local -n r_values=$1;
+	local now;
+	now=$(printf "%(%s)T" -1)
+	r_values[BLANK_COUNT_IDX]=81;
+	r_values[ERROR_COUNT_IDX]=0;
+	r_values[SPENT_TIME_IDX]=0;
+	r_values[START_TIME_IDX]=$now;
+	# shellcheck disable=SC2034
+	r_values[LAST_SAVE_TIME_IDX]=${r_values[START_TIME_IDX]};
+	r_values[LAST_OPEN_TIME_IDX]=${r_values[START_TIME_IDX]};
+}
 set_blank_values(){
 	local i;
 	for ((i=0;i<9*9;i++)); do
 		values[i]="";
 	done;
+	set_fields values;
 }
 set_blank_values
+# shellcheck disable=SC2034
 declare -ag annotations=()
 
 # get_values: given a type(row, column or bloc) return an array of all set items;
 get_values(){
 	debug "get_values $*"
-	local x;
-	local y;
+	local _get_values_x;
+	local _get_values_y;
 	local slice_type=$1;
 	if [[ "$slice_type" == "row" ]]; then
-		y="$2";
-		for (( x=0; x<9; x++ ));
-		do
-			echo "${values[x+y*9]}";
-		done;
+		local idx="$(( $2 * 9 ))";
+		local rv=( "${values[@]:$idx:9}" );
+		info "get_values $* == [${rv[@]}]"
+		printf "%s\n" "${rv[@]}"
 		return;
 	fi;
 	if [[ "$slice_type" == "column" ]]; then
-		x="$2";
-		for (( y=0; y<9; y++ ));
+		_get_values_x="$2";
+		local rv=()
+		for (( _get_values_y=0; _get_values_y<9; _get_values_y++ ));
 		do
-			echo "${values[x+y*9]}";
+			rv[_get_values_y]="${values[_get_values_x+_get_values_y*9]}";
 		done;
+		info "get_values $* == [${rv[@]}]"
+		printf "%s\n" "${rv[@]}"
 		return;
 	fi;
 	if [[ "$slice_type" == "bloc" ]]; then
+		local rv=();
+		local i=0;
 		for (( i=0; i<9; i++ ));
 		do
-			x=$(( ($3/3) * 3 + (i%3) ))
-			y=$(( ($2/3) * 3 + (i/3) ))
-			echo "${values[x+y*9]}";
+			_get_values_x=$(( ($3/3) * 3 + (i%3) ))
+			_get_values_y=$(( ($2/3) * 3 + (i/3) ))
+			rv[i]="${values[_get_values_x+_get_values_y*9]}";
 		done;
+		info "get_values $* == [${rv[@]}]"
+		printf "%s\n" "${rv[@]}"
 		return;
 	fi;
 	error "unsupported slice_type $slice_type";
@@ -122,6 +149,8 @@ cell_redraw_v(){
 	local i;
 	local v=$2;
 	local level=$4;
+	local x;
+	local y;
 	(( level > 0 )) && return;
 	for (( i=0; i<9; i++)); do
 		if [[ "${array[i]}" == "$v" ]]; then
@@ -136,8 +165,8 @@ cell_redraw_v(){
 					;;
 				bloc)
 					local blocN=$3;
-					x=$(( blocN * 3 + (i%3) ))
-					y=$(( blocN * 3 + (i/3) ))
+					x=$(( ((blocN) % 3) * 3 + (i%3) ))
+					y=$(( ((blocN) % 3) * 3 + (i/3) ))
 					;;
 			esac
 			cell_draw "$x" "$y" "$v" $((level+1));
@@ -155,6 +184,7 @@ validate(){
 		return "$EMPTY";
 	fi;
 	debug "validate $*"
+	[[ $1 == 25 ]] && error "unexpected $*"
 	declare -a row;
 	declare -a col;
 	declare -a bloc;
@@ -230,7 +260,7 @@ cell_draw(){
 }
 
 declare table_x_pad=1
-declare table_y_pad=1
+declare table_y_pad=2
 
 move_to_cell(){
 	local cell_width=3;
@@ -239,6 +269,22 @@ move_to_cell(){
 	local y="$2";
 	term_move "$(( table_x_pad + (2+x)*cell_width -2 ))" "$(( table_y_pad + (2+y)*cell_height ))";
 }
+
+render_frame(){
+	term_move 0 0
+	echo "Sudoku:"
+	term_move $((table_x_pad)) $((table_y_pad))
+	bg=$(term_color rgb background 20 20 20);
+	fg=$(term_color rgb foreground 40 40 70);
+	printf "$bg$fg%s%30s%s\n" "╭" "" "╮"| sed "s/ /─/g"
+	local i;
+	for (( i=0; i<10; i++)); do
+	printf "%s%30s%s\n" "│" "" "│"
+	done;
+	printf "%s%30s%s" "╰" "" "╯"| sed "s/ /─/g"
+	#printf "%s" "ꜜ6️⃣9️⃣9️⃣";
+}
+
 
 redraw(){
 	clear;
@@ -256,7 +302,7 @@ redraw(){
 	done;
 	wait
 	ui_help;
-	term_move 0 0
+	refresh_current_game_info
 }
 
 declare value_highlighted=0
@@ -313,9 +359,7 @@ get_game_id(){
 	local gameid;
 	mkdir -p "${save_folder}";
 	[ -f "$save_id_file" ] || echo "0" > "$save_id_file";
-	info "get_game_id before read"
 	read -r gameid <"$save_id_file"
-	info "get_game_id after read: ${gameid:-0}"
 	echo -n "${gameid:-0}"
 }
 
@@ -327,15 +371,104 @@ get_save_file(){
 	echo -n "$save_file"
 }
 
+max_game_id(){
+	declare f;
+	for f in "$save_folder/sudoku."*'.save';
+	do
+		echo "$f" |
+			grep -o '[0-9]*';
+	done |
+		sort -n |
+			tail -1;
+}
+
 new(){
 	local max_game_id;
-	max_game_id=$(ls -t1 $save_folder | grep -o '[0-9]*.save' | grep -o '[0-9]*' | sort -n | tail -1)
+	max_game_id=$(max_game_id)
 	echo -n "$((max_game_id+1))" >"$save_id_file";
 	load
 }
 
+elapsed_text(){
+	local elap=$1
+	local seconds=$elap;
+	if [[ seconds -lt 99 ]]; then
+		echo "${seconds}s"
+		return;
+	fi;
+	local minutes=$((seconds / 60));
+	if [[ $minutes -lt 99 ]]; then
+		echo "${minutes}m";
+		return;
+	fi;
+	local hours=$((minutes / 60));
+	if [[ $hours -lt 24 ]]; then
+		echo "${hours}H"
+		return;
+	fi;
+	local days=$((hours / 24));
+	if [[ $days -lt 7 ]]; then
+		echo "${days}D"
+		return;
+	fi;
+	local weeks=$(( days / 7 ));
+	if [[ $weeks -lt 5 ]]; then
+		echo "${weeks}W";
+		return
+	fi;
+	local months=$(( days / 30 ));
+	if [[ $months -lt 12 ]]; then
+		echo "${months}M"
+		return
+	fi;
+	local years=$(( months / 12 ))
+	echo "👴 ${years}Y"
+}
+elapsed(){
+	local t1=$1;
+	local now;
+	now=$(printf "%(%s)T" -1)
+	local t2=$now;
+	[[ ${#@} -gt 1 ]] && t2=${2};
+	local elap=$((t2 - t1));
+	elapsed_text $elap;
+}
 
-load_select(){
+game_info(){
+	local -n data="$1"
+	local percent=$(( 100 - data[BLANK_COUNT_IDX] * 100 / 81))
+	local errcnt=${data[ERROR_COUNT_IDX]:0}
+	local spent_time=${data[SPENT_TIME_IDX]:0}
+	local spent_time;
+	spent_time="$(elapsed_text ${data[SPENT_TIME_IDX]})";
+	local elapsed_since_saved=0;
+	local elapsed_since_saved_text=""
+	local now;
+	printf -v now "%(%s)T" -1;
+	if [[ $(( now - data[LAST_SAVE_TIME_IDX] )) -gt 300 ]]; then
+		elapsed_since_saved="$(elapsed "${data[LAST_SAVE_TIME_IDX]}")";
+		elapsed_since_saved_text=" 💾:$elapsed_since_saved"
+	fi;
+	local errs="";
+	[[ $errcnt -gt 0 ]] && errs=" ⛔:$errcnt"
+	printf "%i%% ⏱️:%s%s%s  " "$percent" "$spent_time" "$errs" "$elapsed_since_saved_text"
+}
+
+save_info(){
+	local save_file=$1;
+	if [[ "$save_file" == "" ]]; then
+		echo "empty";
+		return;
+	fi;
+	declare -ax saved_values;
+	mapfile -t saved_values <"$save_file";
+	if [[ ${#saved_values[@]} -lt $LAST_FIELD_IDX ]]; then
+		set_fields saved_values
+	fi;
+	game_info saved_values
+}
+
+show_load_menu(){
 	local files_per_page=9
 	local page=0;
 	declare -a save_files;
@@ -350,12 +483,12 @@ load_select(){
 		local i;
 		local f="";
 		for (( i=0; i<9; i++ )); do
-			term_move 2 $((2+i))
-			f="(empty)";
+			term_move 2 $((1+i+table_y_pad))
+			f="";
 			if [[ $(( i*page+i )) -lt ${#save_files[@]} ]]; then
 				f="${save_files[$((i*page+i))]}";
 			fi;
-			printf " %i %-27s" "$((i+1))" "$f"; 
+			printf " %i %-27s" "$((i+1))" "$(save_info "$f")"; 
 		done
 		term_move 11 11
 		printf "[page %i/%i]" $((page+1)) $((last_page+1))
@@ -375,7 +508,7 @@ load_select(){
 			page=$((page-1));
 			continue;
 		fi;
-		if [[ "$opt" == "c" ]]; then
+		if [[ "$opt" == "c" || "$opt" == "\x1b" ]]; then
 			redraw;
 			return;
 		fi;
@@ -397,45 +530,86 @@ load_select(){
 	done;
 	load;
 }
+
+declare pause_time=0
+
+pause_toggle(){
+	[[ $pause_time -eq 0 ]] && pause || resume 
+}
+
+pause(){
+	pause_time="$(printf "%(%s)T" -1)";
+	local i;
+	for ((i=0;i<10;i++));do
+		term_move 2 $(( 1+i+table_y_pad ))
+		printf "%30s" ""
+	done;
+	term_move 2 5
+	printf "    G A M E   P A U S E D   "
+}
+
+update_spent_time(){
+	local ref_time;
+	local now;
+	now=$(printf "%(%s)T" -1);
+	ref_time=$now
+	if [[ $pause_time -gt 0 ]]; then
+		ref_time=$pause_time;
+	fi
+	values[SPENT_TIME_IDX]=$(( values[SPENT_TIME_IDX] + (ref_time - values[LAST_OPEN_TIME_IDX]) ))
+	values[LAST_OPEN_TIME_IDX]=$now
+}
+
+resume(){
+	redraw;
+	local now;
+	now=$(printf "%(%s)T" -1);
+	values[LAST_OPEN_TIME_IDX]=$now
+	pause_time=0;
+}
+
+load_menu(){
+	pause
+	save
+	show_load_menu
+	resume
+}
+
 load(){
 	local save_file;
 	ui_status "Loading..."
 	save_file="$(get_save_file)";
 	set_blank_values
 	[[ -f "${save_file}" ]] && mapfile -t values <"${save_file}"
+	if [[ ${#values[@]} -lt $LAST_FIELD_IDX ]]; then
+		set_fields values
+	fi;
+	values[LAST_OPEN_TIME_IDX]=$(printf "%(%s)T" -1)
 	redraw
 }
 
 save(){
 	local save_file;
 	save_file=$(get_save_file);
+	update_spent_time;
+	local now=$(printf "%(%s)T" -1)
+	values[LAST_SAVE_TIME_IDX]=$now
 	printf "%s\n" "${values[@]}" >"${save_file}"
 	ui_status "Saved"
 	sleep 1;
 }
 
 declare last_status_size=0
-render_frame(){
-	term_move 0 0
-	bg=$(term_color rgb background 20 20 20);
-	fg=$(term_color rgb foreground 40 40 70);
-	printf "$bg$fg%s%30s%s\n" "╭" "" "╮"| sed "s/ /─/g"
-	local i;
-	for (( i=0; i<10; i++)); do
-	printf "%s%30s%s\n" "│" "" "│"
-	done;
-	printf "%s%30s%s" "╰" "" "╯"| sed "s/ /─/g"
-	#printf "%s" "ꜜ6️⃣9️⃣9️⃣";
-}
 ui_status() {
-	term_move 2 13
+	term_move $(( table_x_pad + 2 )) $(( table_y_pad + 13 ));
 	local text="$*"
 	printf "%-${last_status_size:0}s" "$*"
 	last_status_size=${#text}
 	term_move 2 0
 }
+
 ui_help(){
-	term_move 0 15
+	term_move 0 $(( table_y_pad + 15 ))
 	for v in "${!keybind[@]}";
 	do
 		echo -e "$v\t${keybind[$v]}"
@@ -444,6 +618,7 @@ ui_help(){
 }
 
 quit(){
+	save
 	reset;
 	exit 0;
 }
@@ -486,25 +661,43 @@ set_y(){
 	highlight_bloc "$blocN";
 }
 
+refresh_current_game_info(){
+	term_move 9 0
+	game_info values
+}
 set_v(){
 	# parse / set value
 	if [[ "$REPLY" =~ ^[0-9]$ && ! -z "$ix" && ! -z "$iy" ]]; then
 		v="${REPLY}"
+		highlight_value "$v"
+		local p_v=${values[x+y*9]};
+		if [[ "$p_v" == "$v" ]]; then
+			highlight_value "$v";
+			return;
+		fi;
+		if [[ "$p_v" == "" || "$p_v" == 0 ]] && [[ "$v" != "0" ]]; then
+			values[BLANK_COUNT_IDX]=$(( values[BLANK_COUNT_IDX] -1 ))
+			if ! validate "$x" "$y" "$v" 0; then
+				values[ERROR_COUNT_IDX]=$(( values[ERROR_COUNT_IDX]+1 ));
+			fi;
+		fi;
+		if [[ "$p_v" =~ ^[1-9]$ ]] && [[ "$v" == "0" ]]; then
+			values[BLANK_COUNT_IDX]=$(( values[BLANK_COUNT_IDX] +1 ))
+		fi;
 		values[x+y*9]="$v";
 		cell_draw "$x" "$y" "$v" 0;
-		term_move 0 0
+		refresh_current_game_info
 		ix="";
 		iy="";
 		save;
 		x=-1;
 		y=-1;
 	fi;
-	highlight_value "$REPLY"
 }
 
 declare -A keybind;
 keybind["s"]=save
-keybind["l"]=load_select
+keybind["l"]=load_menu
 keybind["n"]=new;
 #keybind["j"]=hint_one;
 #keybind["k"]=auto_solve;
@@ -512,6 +705,7 @@ keybind["[A-I]"]=set_x
 keybind["[a-i]"]=set_y
 keybind["[0-9]"]=set_v
 keybind["q"]=quit;
+keybind["p"]=pause_toggle
 
 read_input(){
 	local ix="";
@@ -531,6 +725,7 @@ read_input(){
 		ui_status "Ready! Waiting your call..."
 	done
 }
+
 render_frame;
 load
 read_input
