@@ -6,7 +6,10 @@
 #
 # Dependencies:
 # - flock (util-linux)
-
+# Useful UTF icons digits
+# echo -e "\x$( printf %x $(( 16#30 +9 )))\xef\xb8\x8f"
+# echo -e "\xf0\x9d\x9f\x$( printf %x $(( 16#8e +1 )))"
+#
 UNAME=$(uname);
 [[ "$UNAME" == "Darwin" ]] && {
 	which flock &>/dev/null || brew install flock
@@ -351,7 +354,6 @@ highlight_value(){
 	wait;
 }
 
-
 declare save_folder=${base_folder}/save;
 declare save_id_file=${save_folder}/save_id;
 
@@ -584,8 +586,6 @@ load(){
 	if [[ ${#values[@]} -lt $LAST_FIELD_IDX ]]; then
 		set_fields values
 	fi;
-	values[LAST_OPEN_TIME_IDX]=$(printf "%(%s)T" -1)
-	redraw
 }
 
 save(){
@@ -625,12 +625,12 @@ quit(){
 
 set_x(){
 	# parse colum (x)
-	if [[ ! "$REPLY" =~ ^[A-I]$ ]]; then
+	if [[ ! "$user_input" =~ ^[A-I]$ ]]; then
 		# invalid
 		return;
 	fi;
 	# col (x)
-	ix="$REPLY";
+	ix="$user_input";
 	xdx=$(xd "$ix");
 	old_x="$x"
 	x="$(( 16#$xdx - 16#$xd_A))"
@@ -644,12 +644,12 @@ set_x(){
 
 set_y(){
 	# parse row (y)
-	if [[ ! "$REPLY" =~ ^[a-i]$ ]]; then
+	if [[ ! "$user_input" =~ ^[a-i]$ ]]; then
 		# invalid
 		return;
 	fi;
 	# row (y)
-	iy="$REPLY";
+	iy="$user_input";
 	xdy=$(xd "$iy");
 	old_y="$y"
 	y="$(( 16#$xdy - 16#$xd_a))";
@@ -667,8 +667,8 @@ refresh_current_game_info(){
 }
 set_v(){
 	# parse / set value
-	if [[ "$REPLY" =~ ^[0-9]$ && ! -z "$ix" && ! -z "$iy" ]]; then
-		v="${REPLY}"
+	if [[ "$user_input" =~ ^[0-9]$ && ! -z "$ix" && ! -z "$iy" ]]; then
+		v="${user_input}"
 		highlight_value "$v"
 		local p_v=${values[x+y*9]};
 		if [[ "$p_v" == "$v" ]]; then
@@ -716,11 +716,16 @@ read_input(){
 	local y=-1;
 	local v;
 	local i;
+	local user_input;
 	ui_status "Ready! Waiting your call..."
-	while read -srn 1; do
+	while read -srn 1 user_input; do
+		if [[ "$user_input" == $'\033' ]]; then
+			# escape key
+			:
+		fi;
 		ui_status "Processing your input... Please wait..."
 		for k in "${!keybind[@]}"; do
-			[[ "$REPLY" =~ $k ]] && ${keybind[$k]} "$REPLY";
+			[[ "$user_input" =~ $k ]] && ${keybind[$k]} "$user_input";
 		done;
 		ui_status "Ready! Waiting your call..."
 	done
@@ -728,5 +733,6 @@ read_input(){
 
 render_frame;
 load
+resume
 read_input
 wait;
